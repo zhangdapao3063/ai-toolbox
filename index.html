@@ -1358,7 +1358,7 @@ function openModal(toolId) {
             </div>
         </div>
         <footer class="modal-footer">
-            <button class="modal-btn primary" onclick="closeModal()">
+            <button class="modal-btn primary" onclick="openAIChat(${tool.id})">
                 &#128640; 开始使用
             </button>
             <button class="modal-btn secondary" onclick="closeModal()">
@@ -1421,6 +1421,307 @@ themeToggle.addEventListener("click", () => {
 
 renderFilterTabs();
 renderToolsGrid();
+
+
+/* ================================================================
+ * AI 聊天功能 (Dify API)
+ * ================================================================ */
+
+// Dify API 配置
+const DIFY_API_KEY = "app-2Fwuh6ItlWhQIaor2AsEjGE2";
+const DIFY_BASE_URL = "https://api.dify.ai/v1";
+
+let currentTool = null;
+let chatConversationId = null;
+let chatOverlay = null;
+let chatInput = null;
+let chatMessages = null;
+
+// 打开 AI 聊天窗口
+function openAIChat(toolId) {
+    closeModal();
+    currentTool = TOOLS.find(t => t.id === toolId);
+    if (!currentTool) return;
+    
+    // 创建聊天弹窗
+    createChatUI();
+    
+    // 添加欢迎消息
+    addChatMessage("assistant", `你好！我是 AI 写作助手，可以帮你完成【${currentTool.name}】任务。请告诉我你的需求，我来帮你生成内容。`);
+}
+
+function createChatUI() {
+    // 移除已存在的弹窗
+    const existing = document.getElementById("chatOverlay");
+    if (existing) existing.remove();
+    
+    // 创建聊天弹窗 HTML
+    const chatHTML = `
+        <div id="chatOverlay" class="chat-overlay">
+            <div class="chat-container">
+                <header class="chat-header">
+                    <div class="chat-title">
+                        <span class="chat-icon">${currentTool?.icon || "&#128172;"}</span>
+                        <span>${currentTool?.name || "AI 写作助手"}</span>
+                    </div>
+                    <button class="chat-close" onclick="closeChat()">&#10005;</button>
+                </header>
+                <div class="chat-messages" id="chatMessages"></div>
+                <div class="chat-input-area">
+                    <textarea id="chatInput" placeholder="输入你的问题或需求..." rows="1"></textarea>
+                    <button class="chat-send" onclick="sendChatMessage()">&#10148;</button>
+                </div>
+                <div class="chat-loading" id="chatLoading" style="display:none;">
+                    <span class="loading-dots">AI 思考中<span>.</span><span>.</span><span>.</span></span>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML("beforeend", chatHTML);
+    
+    // 初始化变量
+    chatOverlay = document.getElementById("chatOverlay");
+    chatInput = document.getElementById("chatInput");
+    chatMessages = document.getElementById("chatMessages");
+    
+    // 自动聚焦输入框
+    setTimeout(() => chatInput?.focus(), 100);
+    
+    // 回车发送
+    chatInput?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendChatMessage();
+        }
+    });
+    
+    // 自动调整高度
+    chatInput?.addEventListener("input", () => {
+        chatInput.style.height = "auto";
+        chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+    });
+}
+
+function closeChat() {
+    const chat = document.getElementById("chatOverlay");
+    if (chat) {
+        chat.remove();
+        currentTool = null;
+        chatConversationId = null;
+    }
+}
+
+function addChatMessage(role, content) {
+    if (!chatMessages) return;
+    
+    const msgDiv = document.createElement("div");
+    msgDiv.className = `chat-message ${role}`;
+    msgDiv.innerHTML = role === "user" 
+        ? `<div class="message-content">${escapeHtml(content)}</div>`
+        : `<div class="message-content">${content}</div>`;
+    
+    chatMessages.appendChild(msgDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+async function sendChatMessage() {
+    const message = chatInput.value.trim();
+    if (!message) return;
+    
+    // 显示用户消息
+    addChatMessage("user", message);
+    chatInput.value = "";
+    chatInput.style.height = "auto";
+    
+    // 显示加载状态
+    document.getElementById("chatLoading").style.display = "block";
+    
+    try {
+        // 调用 Dify API
+        const response = await fetch(`${DIFY_BASE_URL}/chat-messages`, {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${DIFY_API_KEY}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                "inputs": {},
+                "query": message,
+                "response_mode": "blocking",
+                "conversation_id": chatConversationId || ""
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.conversation_id) {
+            chatConversationId = data.conversation_id;
+        }
+        
+        // 显示 AI 响应
+        addChatMessage("assistant", data.answer || "抱歉，我没有收到响应。");
+        
+    } catch (error) {
+        console.error("API Error:", error);
+        addChatMessage("assistant", "网络错误，请检查网络连接后重试。");
+    }
+    
+    document.getElementById("chatLoading").style.display = "none";
+}
+
+function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 添加 AI 聊天的 CSS
+const chatCSS = `
+.chat-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+}
+.chat-container {
+    width: 90%;
+    max-width: 600px;
+    height: 80vh;
+    max-height: 600px;
+    background: var(--bg-secondary);
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 25px 80px rgba(0,0,0,0.5);
+    border: 1px solid var(--glass-border);
+}
+.chat-header {
+    padding: 16px 20px;
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--glass-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.chat-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.chat-icon {
+    font-size: 24px;
+}
+.chat-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+.chat-close:hover {
+    background: var(--glass-hover);
+    color: var(--text-primary);
+}
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.chat-message {
+    max-width: 85%;
+    animation: slideUp 0.3s ease;
+}
+.chat-message.user {
+    align-self: flex-end;
+}
+.chat-message.assistant {
+    align-self: flex-start;
+}
+.message-content {
+    padding: 12px 16px;
+    border-radius: 16px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+.chat-message.user .message-content {
+    background: var(--accent-gradient);
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+.chat-message.assistant .message-content {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    color: var(--text-primary);
+    border-bottom-left-radius: 4px;
+}
+.chat-input-area {
+    padding: 16px;
+    border-top: 1px solid var(--glass-border);
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+}
+.chat-input-area textarea {
+    flex: 1;
+    padding: 12px 16px;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 14px;
+    resize: none;
+    outline: none;
+    font-family: inherit;
+    transition: border-color 0.2s;
+}
+.chat-input-area textarea:focus {
+    border-color: var(--accent-primary);
+}
+.chat-send {
+    width: 48px;
+    height: 48px;
+    border: none;
+    border-radius: 12px;
+    background: var(--accent-gradient);
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.chat-send:hover {
+    transform: scale(1.05);
+    box-shadow: var(--shadow-glow);
+}
+.chat-loading {
+    padding: 8px 16px 16px;
+    text-align: center;
+}
+.loading-dots span {
+    animation: blink 1.4s infinite both;
+}
+.loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
+`;
+
+// 注入 CSS
+const styleSheet = document.createElement("style");
+styleSheet.textContent = chatCSS;
+document.head.appendChild(styleSheet);
 
 </script>
 </body>

@@ -33,7 +33,7 @@ let activeCategory = "all";
 let searchQuery = "";
 
 // Dify API 配置
-const DIFY_API_KEY = "app-2Fwuh6ItlWhQIaor2AsEjGE2";
+const DIFY_API_KEY = "app-qA7PWBKSzeSfzmiBea6NM712";
 const DIFY_BASE_URL = "https://api.dify.ai/v1";
 
 let currentTool = null;
